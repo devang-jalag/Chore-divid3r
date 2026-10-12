@@ -3,6 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  Bell,
+  Calendar,
+  Activity,
+  ArrowLeftRight,
+  UserPlus,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import {
   assignChore,
@@ -10,6 +19,7 @@ import {
   cycleDates,
   fmtLong,
   fmtShort,
+  resolveEffectiveAssignee,
 } from "@/lib/cycles";
 import type {
   ChecklistItem,
@@ -17,6 +27,8 @@ import type {
   Completion,
   HouseholdMember,
   SpecialCycle,
+  ChoreSwap,
+  MemberLeave,
 } from "@/lib/types";
 import ChoreCard, { type CardChecklistItem } from "./ChoreCard";
 import ChecklistEditor from "./ChecklistEditor";
@@ -26,6 +38,12 @@ import SpecialCyclesPanel from "./SpecialCyclesPanel";
 import ExtrasPanel from "./ExtrasPanel";
 import FairnessPreview from "./FairnessPreview";
 import SignOutButton from "./SignOutButton";
+import ChoreSwapModal from "./ChoreSwapModal";
+import VacationModal from "./VacationModal";
+import NotificationSettingsModal from "./NotificationSettingsModal";
+import ActivityPanel from "./ActivityPanel";
+import { triggerCompletionConfetti } from "@/lib/confetti";
+import { useToast } from "./Toast";
 
 /**
  * Completions belonging to special cycles always use cycle_index 0;
@@ -52,16 +70,29 @@ export default function HouseholdBoard({
   initialSpecials: SpecialCycle[];
 }) {
   const router = useRouter();
+  const { success, info } = useToast();
+
   const [members, setMembers] = useState(initialMembers);
   const [chores, setChores] = useState(initialChores);
   const [items, setItems] = useState(initialItems);
   const [specials, setSpecials] = useState(initialSpecials);
   const [completions, setCompletions] = useState<Completion[]>([]);
+  const [swaps, setSwaps] = useState<ChoreSwap[]>([]);
+  const [leaves, setLeaves] = useState<MemberLeave[]>([]);
 
   const [cycleOffset, setCycleOffset] = useState(0);
   const [view, setView] = useState<"regular" | "special">("regular");
   const [specialId, setSpecialId] = useState<string | null>(null);
+
+  // Dialogs & drawers
   const [inviteOpen, setInviteOpen] = useState(false);
+  const [vacationOpen, setVacationOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [swapModal, setSwapModal] = useState<{
+    choreId: string | null;
+    choreName: string;
+  } | null>(null);
   const [editingChecklist, setEditingChecklist] = useState<{
     choreId: string;
     choreName: string;
@@ -72,9 +103,8 @@ export default function HouseholdBoard({
   stateRef.current = { view, cycleOffset, specialId };
 
   const memberIds = members.map((m) => m.user_id);
-  const memberName = (userId: string | null) =>
-    members.find((m) => m.user_id === userId)?.profile?.display_name?.trim() ||
-    null;
+  const memberName = (uid: string | null) =>
+    members.find((m) => m.user_id === uid)?.profile?.display_name?.trim() || null;
 
   // ---------- data loading ----------
 
@@ -100,7 +130,7 @@ export default function HouseholdBoard({
       })
     );
     if (!mapped.some((m) => m.user_id === userId)) {
-      router.push("/households"); // removed from household
+      router.push("/households");
       return;
     }
     setMembers(mapped);
@@ -139,14 +169,27 @@ export default function HouseholdBoard({
         created_at: s.created_at,
         chores: ((s.special_cycle_chores ?? []) as any[])
           .slice()
-          .sort((a, b) => a.position - b.position),
+          .sort((a: any, b: any) => a.position - b.position),
       }))
     );
-  }, [householdId, router, userId]);
+
+    // Load swaps & leaves
+    const { data: swapRows } = await supabase
+      .from("chore_swaps")
+      .select("*")
+      .eq("household_id", householdId);
+    setSwaps((swapRows ?? []) as ChoreSwap[]);
+
+    const { data: leaveRows } = await supabase
+      .from("member_leaves")
+      .select("*")
+      .eq("household_id", householdId);
+    setLeaves((leaveRows ?? []) as MemberLeave[]);
+  }, [householdId, userId, router]);
 
   const refreshCompletions = useCallback(async () => {
-    const { view: v, cycleOffset: off, specialId: sid } = stateRef.current;
     const supabase = createClient();
+    const { view: v, cycleOffset: off, specialId: sid } = stateRef.current;
     let query = supabase
       .from("completions")
       .select(
@@ -167,7 +210,6 @@ export default function HouseholdBoard({
     setCompletions((data ?? []) as Completion[]);
   }, [householdId]);
 
-  // Reload completions when the viewed cycle/special changes.
   useEffect(() => {
     refreshCompletions();
   }, [view, cycleOffset, specialId, refreshCompletions]);
@@ -181,7 +223,7 @@ export default function HouseholdBoard({
     debounceRef.current = setTimeout(() => {
       refreshAll();
       refreshCompletions();
-    }, 500);
+    }, 400);
   };
 
   useEffect(() => {
@@ -191,11 +233,14 @@ export default function HouseholdBoard({
       { table: "household_members", filter: `household_id=eq.${householdId}` },
       { table: "households", filter: `id=eq.${householdId}` },
       { table: "chores", filter: `household_id=eq.${householdId}` },
-      { table: "checklist_items" }, // no household_id; refresh is cheap
+      { table: "checklist_items" },
       { table: "special_cycles", filter: `household_id=eq.${householdId}` },
       { table: "special_cycle_chores" },
       { table: "completions", filter: `household_id=eq.${householdId}` },
       { table: "household_invites", filter: `household_id=eq.${householdId}` },
+      { table: "chore_swaps", filter: `household_id=eq.${householdId}` },
+      { table: "member_leaves", filter: `household_id=eq.${householdId}` },
+      { table: "activity_logs", filter: `household_id=eq.${householdId}` },
     ];
     subs.forEach(({ table, filter }) => {
       const config: {
@@ -231,8 +276,16 @@ export default function HouseholdBoard({
           ? c.chore_name === opts.choreName
           : (c.chore_id ?? null) === (opts.choreId ?? null))
     );
+
     if (existing) {
       await supabase.from("completions").delete().eq("id", existing.id);
+      await supabase.from("activity_logs").insert({
+        household_id: householdId,
+        actor_id: userId,
+        action: "chore_uncompleted",
+        metadata: { chore_name: opts.choreName, cycle_index: opts.cycleIndex },
+      });
+      info(`Reopened ${opts.choreName}`);
     } else {
       await supabase.from("completions").insert({
         household_id: householdId,
@@ -243,6 +296,16 @@ export default function HouseholdBoard({
         chore_name: opts.choreName,
         done_by: userId,
       });
+
+      triggerCompletionConfetti();
+
+      await supabase.from("activity_logs").insert({
+        household_id: householdId,
+        actor_id: userId,
+        action: "chore_completed",
+        metadata: { chore_name: opts.choreName, cycle_index: opts.cycleIndex },
+      });
+      success(`Marked ${opts.choreName} as complete`);
     }
     refreshCompletions();
   }
@@ -263,6 +326,7 @@ export default function HouseholdBoard({
         (c.special_cycle_id ?? null) === (opts.specialCycleId ?? null) &&
         (c.checklist_item_id ?? null) === opts.itemId
     );
+
     if (opts.checked && !existing) {
       await supabase.from("completions").insert({
         household_id: householdId,
@@ -294,10 +358,13 @@ export default function HouseholdBoard({
     badge: string;
     assignee: string | null;
     done: boolean;
+    isSwapped?: boolean;
+    hasActiveSwap?: boolean;
     items: CardChecklistItem[];
     checklistChoreId: string | null;
     onToggleDone: () => void;
     onToggleItem: (itemId: string, checked: boolean) => void;
+    onRequestSwap?: () => void;
   }
 
   let boardChores: BoardChore[] = [];
@@ -305,8 +372,7 @@ export default function HouseholdBoard({
   let boardSub = "";
 
   if (view === "special" && activeSpecial) {
-    const seed =
-      specials.indexOf(activeSpecial) + currentCycleIndex();
+    const seed = specials.indexOf(activeSpecial) + currentCycleIndex();
     boardTitle = activeSpecial.name;
     boardSub = `Target ${fmtLong(new Date(activeSpecial.target_date + "T12:00:00"))}`;
     boardChores = activeSpecial.chores.map((sc) => {
@@ -364,9 +430,34 @@ export default function HouseholdBoard({
           : "Next cycle";
     boardSub = `Assignments for ${fmtShort(dates.sat)}–${fmtShort(dates.sun)}`;
     const ordered = chores.slice().sort((a, b) => a.position - b.position);
+
     boardChores = ordered.map((chore) => {
-      const assigneeUserId = assignChore(chore.position, viewCycleIndex, memberIds);
+      const activeSwapsFormatted = swaps.map((s) => ({
+        choreId: s.chore_id,
+        choreName: s.chore_name,
+        cycleIndex: s.cycle_index,
+        targetUserId: s.target_user_id,
+        status: s.status,
+      }));
+
+      const { userId: effectiveUserId, isSwapped } = resolveEffectiveAssignee(
+        chore.position,
+        viewCycleIndex,
+        memberIds,
+        activeSwapsFormatted,
+        chore.id,
+        chore.name
+      );
+
+      const hasActiveSwap = swaps.some(
+        (s) =>
+          s.cycle_index === viewCycleIndex &&
+          ((chore.id && s.chore_id === chore.id) || s.chore_name === chore.name) &&
+          s.status === "pending"
+      );
+
       const choreItems = items.filter((it) => it.chore_id === chore.id);
+
       return {
         key: chore.id,
         title: chore.name,
@@ -374,7 +465,7 @@ export default function HouseholdBoard({
           chore.kind === "core"
             ? `CORE ${String(chore.position + 1).padStart(2, "0")}`
             : "EXTRA",
-        assignee: memberName(assigneeUserId),
+        assignee: memberName(effectiveUserId),
         done: completions.some(
           (c) =>
             c.kind === "chore" &&
@@ -382,6 +473,8 @@ export default function HouseholdBoard({
             !c.special_cycle_id &&
             c.chore_id === chore.id
         ),
+        isSwapped,
+        hasActiveSwap,
         items: choreItems.map((it) => ({
           id: it.id,
           text: it.text,
@@ -410,6 +503,8 @@ export default function HouseholdBoard({
             itemId,
             checked,
           }),
+        onRequestSwap: () =>
+          setSwapModal({ choreId: chore.id, choreName: chore.name }),
       };
     });
   }
@@ -425,7 +520,7 @@ export default function HouseholdBoard({
   return (
     <main className="mx-auto max-w-6xl px-5 pb-16 pt-6">
       {/* top bar */}
-      <div className="mb-6 flex items-center justify-between gap-4 text-sm text-muted">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4 text-sm text-muted">
         <div className="flex items-center gap-3">
           <span className="inline-block h-2 w-2 rounded-full bg-pine" />
           <Link href="/households" className="hover:text-ink">
@@ -433,7 +528,35 @@ export default function HouseholdBoard({
           </Link>
           <strong className="text-ink">{householdName}</strong>
         </div>
-        <SignOutButton />
+
+        {/* Quick Tools */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActivityOpen((v) => !v)}
+            title="Household Activity Log"
+            className="flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-semibold hover:border-ink"
+          >
+            <Activity className="h-3.5 w-3.5" />
+            Activity
+          </button>
+          <button
+            onClick={() => setVacationOpen(true)}
+            title="Away / Vacation Schedule"
+            className="flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-semibold hover:border-ink"
+          >
+            <Calendar className="h-3.5 w-3.5" />
+            Away Dates
+          </button>
+          <button
+            onClick={() => setNotificationsOpen(true)}
+            title="Discord/Slack Webhook Reminders"
+            className="flex items-center gap-1.5 rounded-full border border-line bg-surface px-3 py-1.5 text-xs font-semibold hover:border-ink"
+          >
+            <Bell className="h-3.5 w-3.5" />
+            Reminders
+          </button>
+          <SignOutButton />
+        </div>
       </div>
 
       {/* hero */}
@@ -455,7 +578,7 @@ export default function HouseholdBoard({
           <p className="mt-4 max-w-xl text-muted">
             Common spaces, kitchen, and bathroom move to a different person
             every two weeks. Extra jobs join the rotation without upsetting the
-            core three. Everyone here sees this board live.
+            core three.
           </p>
         </div>
         <aside className="flex min-h-[220px] flex-col justify-between rounded-3xl bg-ink p-6 text-bg">
@@ -475,28 +598,37 @@ export default function HouseholdBoard({
           <div className="mt-5 flex gap-2">
             <button
               onClick={() => setCycleOffset((o) => o - 1)}
-              className="flex-1 rounded-full border border-current px-3 py-2.5 text-sm font-semibold"
+              aria-label="Previous cycle"
+              className="flex items-center justify-center gap-1 flex-1 rounded-full border border-current px-3 py-2 text-sm font-semibold"
             >
-              ← Prev
+              <ChevronLeft className="h-4 w-4" /> Prev
             </button>
             <button
               onClick={() => {
                 setCycleOffset(0);
                 setView("regular");
               }}
-              className="flex-1 rounded-full border border-current px-3 py-2.5 text-sm font-semibold"
+              className="flex-1 rounded-full border border-current px-3 py-2 text-sm font-semibold"
             >
               Today
             </button>
             <button
               onClick={() => setCycleOffset((o) => o + 1)}
-              className="flex-1 rounded-full border border-current px-3 py-2.5 text-sm font-semibold"
+              aria-label="Next cycle"
+              className="flex items-center justify-center gap-1 flex-1 rounded-full border border-current px-3 py-2 text-sm font-semibold"
             >
-              Next →
+              Next <ChevronRight className="h-4 w-4" />
             </button>
           </div>
         </aside>
       </section>
+
+      {/* Activity drawer (expandable) */}
+      {activityOpen && (
+        <section className="mt-6 rounded-3xl border border-line bg-surface p-6 shadow-soft">
+          <ActivityPanel householdId={householdId} members={members} />
+        </section>
+      )}
 
       {members.length < 3 && (
         <div className="mt-4 flex flex-col gap-4 rounded-2xl border border-amberx/60 bg-amberlt p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -509,8 +641,9 @@ export default function HouseholdBoard({
           </div>
           <button
             onClick={() => setInviteOpen(true)}
-            className="shrink-0 rounded-full bg-pine px-6 py-3 font-semibold text-white hover:opacity-90"
+            className="shrink-0 flex items-center gap-2 rounded-full bg-pine px-6 py-3 font-semibold text-white hover:opacity-90"
           >
+            <UserPlus className="h-4 w-4" />
             Invite housemates
           </button>
         </div>
@@ -555,10 +688,13 @@ export default function HouseholdBoard({
                 badge={c.badge}
                 assigneeName={c.assignee}
                 done={c.done}
+                isSwapped={c.isSwapped}
+                hasActiveSwap={c.hasActiveSwap}
                 statusText={c.done ? "Completed" : "Assigned this round"}
                 items={c.items}
                 onToggleDone={c.onToggleDone}
                 onToggleItem={c.onToggleItem}
+                onRequestSwap={c.onRequestSwap}
                 onEditChecklist={
                   c.checklistChoreId
                     ? () =>
@@ -615,10 +751,10 @@ export default function HouseholdBoard({
       </section>
 
       <p className="mt-8 text-center text-sm text-muted">
-        Changes sync live to every member of “{householdName}”. Invite links
-        live under <strong>+ Invite</strong> in the Household panel.
+        Changes sync live to every member of “{householdName}”.
       </p>
 
+      {/* Modals & Dialogs */}
       {inviteOpen && (
         <InviteDialog
           householdId={householdId}
@@ -626,6 +762,43 @@ export default function HouseholdBoard({
           onClose={() => setInviteOpen(false)}
         />
       )}
+
+      {swapModal && (
+        <ChoreSwapModal
+          isOpen={!!swapModal}
+          onClose={() => setSwapModal(null)}
+          householdId={householdId}
+          currentUserId={userId}
+          members={members}
+          cycleIndex={viewCycleIndex}
+          choreId={swapModal.choreId}
+          choreName={swapModal.choreName}
+          existingSwaps={swaps}
+          onSwapChanged={refreshAll}
+        />
+      )}
+
+      {vacationOpen && (
+        <VacationModal
+          isOpen={vacationOpen}
+          onClose={() => setVacationOpen(false)}
+          householdId={householdId}
+          currentUserId={userId}
+          leaves={leaves}
+          members={members}
+          onLeavesChanged={refreshAll}
+        />
+      )}
+
+      {notificationsOpen && (
+        <NotificationSettingsModal
+          isOpen={notificationsOpen}
+          onClose={() => setNotificationsOpen(false)}
+          householdId={householdId}
+          householdName={householdName}
+        />
+      )}
+
       {editingChecklist && (
         <ChecklistEditor
           choreId={editingChecklist.choreId}

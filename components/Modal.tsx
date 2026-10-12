@@ -3,15 +3,19 @@ export default function Modal({
   eyebrow,
   onClose,
   children,
+  open = true,
 }: {
   title: string;
   eyebrow?: string;
   onClose: () => void;
   children: React.ReactNode;
+  open?: boolean;
 }) {
+  if (!open) return null;
+
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 p-4 sm:items-center backdrop-blur-xs"
       onClick={onClose}
       role="dialog"
       aria-modal="true"

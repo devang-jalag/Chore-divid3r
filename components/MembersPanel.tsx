@@ -1,8 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { ArrowDown, Trash2, UserPlus } from "lucide-react";
 import { initials } from "@/lib/cycles";
 import { createClient } from "@/lib/supabase/client";
+import { useToast } from "./Toast";
 import type { HouseholdMember } from "@/lib/types";
 
 export default function MembersPanel({
@@ -19,6 +21,7 @@ export default function MembersPanel({
   onInvite: () => void;
 }) {
   const router = useRouter();
+  const { success, error: toastError } = useToast();
 
   async function moveDown(index: number) {
     if (members.length < 2) return;
@@ -27,13 +30,22 @@ export default function MembersPanel({
     const b = members[(index + 1) % members.length];
     await supabase.from("household_members").update({ position: b.position }).eq("id", a.id);
     await supabase.from("household_members").update({ position: a.position }).eq("id", b.id);
+    success("Rotation order updated");
     onChanged();
   }
 
   async function removeMember(member: HouseholdMember) {
-    if (!confirm(`Remove ${member.profile?.display_name || "this member"} from the rotation?`)) return;
+    const name = member.profile?.display_name || "this member";
+    if (!window.confirm(`Remove ${name} from the rotation?`)) return;
+
     const supabase = createClient();
-    await supabase.from("household_members").delete().eq("id", member.id);
+    const { error } = await supabase.from("household_members").delete().eq("id", member.id);
+    if (error) {
+      toastError(error.message);
+      return;
+    }
+
+    success(`Removed ${name} from household`);
     if (member.user_id === userId) {
       router.push("/households");
       return;
@@ -45,22 +57,23 @@ export default function MembersPanel({
     <div>
       <div className="mb-4 flex items-end justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold tracking-tight">Household</h2>
+          <h2 className="text-xl font-bold tracking-tight">Household Roster</h2>
           <p className="mt-0.5 text-sm text-muted">
-            Everyone below shares the same live board.
+            Everyone below shares the same live rotation board.
           </p>
         </div>
         <button
           onClick={onInvite}
-          className="rounded-full border border-line px-4 py-2 text-sm font-semibold hover:border-ink"
+          className="flex items-center gap-1.5 rounded-full border border-line px-4 py-2 text-sm font-semibold hover:border-ink"
         >
-          + Invite
+          <UserPlus className="h-4 w-4" />
+          Invite
         </button>
       </div>
 
       {members.length === 0 ? (
         <div className="rounded-xl border border-dashed border-line p-6 text-center text-sm text-muted">
-          No one is in the rotation yet.
+          No members in rotation yet.
         </div>
       ) : (
         <div className="grid gap-2">
@@ -82,24 +95,26 @@ export default function MembersPanel({
                     )}
                   </p>
                   <p className="text-xs text-muted">
-                    Rotation position {i + 1}
+                    Position {i + 1}
                     {m.role === "owner" ? " · Owner" : ""}
                   </p>
                 </div>
                 <div className="flex gap-1.5">
                   <button
                     onClick={() => moveDown(i)}
-                    aria-label={`Move ${name} later in rotation`}
-                    title="Move later in rotation"
-                    className="rounded-lg border border-line px-2.5 py-1.5 text-sm hover:border-ink"
+                    aria-label={`Shift ${name} later in rotation`}
+                    title="Shift later in rotation"
+                    className="flex items-center justify-center h-8 w-8 rounded-lg border border-line text-sm hover:border-ink transition"
                   >
-                    ↓
+                    <ArrowDown className="h-4 w-4" />
                   </button>
                   <button
                     onClick={() => removeMember(m)}
-                    className="rounded-lg border border-line px-2.5 py-1.5 text-sm text-danger hover:border-danger"
+                    aria-label={`Remove ${name}`}
+                    title="Remove member"
+                    className="flex items-center justify-center h-8 w-8 rounded-lg border border-line text-sm text-danger hover:border-danger transition"
                   >
-                    Remove
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
               </div>
@@ -108,8 +123,7 @@ export default function MembersPanel({
         </div>
       )}
       <p className="mt-4 text-xs text-muted">
-        Rotation order decides who gets which chore — use ↓ to shift someone
-        later in the queue.
+        Rotation order decides who gets which chore. Shift someone down to adjust sequence.
       </p>
     </div>
   );

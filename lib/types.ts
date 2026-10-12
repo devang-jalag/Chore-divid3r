@@ -80,3 +80,47 @@ export interface InviteInfo {
   household_name: string;
   valid: boolean;
 }
+
+export type SwapStatus = "pending" | "accepted" | "rejected" | "cancelled";
+
+export interface ChoreSwap {
+  id: string;
+  household_id: string;
+  chore_id: string | null;
+  chore_name: string;
+  cycle_index: number;
+  special_cycle_id: string | null;
+  requester_id: string;
+  target_user_id: string;
+  status: SwapStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MemberLeave {
+  id: string;
+  household_id: string;
+  user_id: string;
+  start_date: string;
+  end_date: string;
+  reason: string;
+  created_at: string;
+}
+
+export interface ActivityLog {
+  id: string;
+  household_id: string;
+  actor_id: string | null;
+  action: string;
+  metadata: Record<string, any>;
+  created_at: string;
+  profile?: Profile | null;
+}
+
+export interface NotificationSettings {
+  household_id: string;
+  webhook_url: string | null;
+  webhook_enabled: boolean;
+  remind_days_before: number;
+  updated_at: string;
+}

@@ -74,6 +74,41 @@ export function assignChore(
   return memberIds[(((chorePosition + cycleIndex) % n) + n) % n];
 }
 
+/**
+ * Resolves the final assignee taking accepted chore swaps into account.
+ */
+export function resolveEffectiveAssignee(
+  chorePosition: number,
+  cycleIndex: number,
+  memberIds: string[],
+  activeSwaps?: {
+    choreId: string | null;
+    choreName?: string;
+    cycleIndex: number;
+    targetUserId: string;
+    status: string;
+  }[],
+  choreId?: string | null,
+  choreName?: string
+): { userId: string | null; isSwapped: boolean } {
+  const naturalAssignee = assignChore(chorePosition, cycleIndex, memberIds);
+  if (!naturalAssignee) return { userId: null, isSwapped: false };
+
+  if (activeSwaps && activeSwaps.length > 0) {
+    const swap = activeSwaps.find(
+      (s) =>
+        s.status === "accepted" &&
+        s.cycleIndex === cycleIndex &&
+        ((choreId && s.choreId === choreId) || (choreName && s.choreName === choreName))
+    );
+    if (swap) {
+      return { userId: swap.targetUserId, isSwapped: true };
+    }
+  }
+
+  return { userId: naturalAssignee, isSwapped: false };
+}
+
 /** Short date like "Oct 17". */
 export function fmtShort(d: Date): string {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
@@ -86,6 +121,11 @@ export function fmtLong(d: Date): string {
     day: "numeric",
     year: "numeric",
   });
+}
+
+/** Format date as YYYY-MM-DD */
+export function fmtIsoDate(d: Date): string {
+  return d.toISOString().split("T")[0];
 }
 
 /** Initials for the avatar circle, e.g. "Aisha Khan" → "AK". */
