@@ -1,0 +1,51 @@
+@import url("https://fonts.googleapis.com/css2?family=Azeret+Mono:wght@500;650&family=DM+Sans:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: 244 245 239;
+  --surface: 255 255 255;
+  --surface2: 233 235 226;
+  --ink: 20 32 24;
+  --muted: 89 100 93;
+  --line: 204 210 200;
+  --green: 22 122 74;
+  --greenlt: 223 243 231;
+  --amber: 243 201 78;
+  --amberlt: 255 244 199;
+  --blue: 39 102 198;
+  --bluelt: 232 240 255;
+  --danger: 164 61 54;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: 16 21 17;
+    --surface: 25 32 27;
+    --surface2: 36 44 38;
+    --ink: 238 244 237;
+    --muted: 174 185 176;
+    --line: 55 66 56;
+    --green: 101 215 149;
+    --greenlt: 21 59 40;
+    --amber: 232 197 91;
+    --amberlt: 62 53 23;
+    --blue: 120 169 245;
+    --bluelt: 27 49 83;
+    --danger: 240 140 131;
+  }
+}
+
+body {
+  background: rgb(var(--bg));
+  color: rgb(var(--ink));
+  font-family: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+}
+
+input,
+select,
+textarea {
+  color-scheme: light dark;
+}
