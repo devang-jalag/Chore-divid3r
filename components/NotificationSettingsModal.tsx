@@ -76,18 +76,21 @@ export default function NotificationSettingsModal({
     setTesting(true);
 
     try {
-      const res = await fetch(webhookUrl, {
+      const res = await fetch("/api/webhooks/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          content: `🧹 **${householdName} Chore Divider Alert**: Webhook integration connected successfully! Upcoming cleaning reminders will be posted here.`,
+          webhookUrl,
+          householdName,
         }),
       });
 
-      if (res.ok) {
-        success("Test notification dispatched to webhook!");
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        success("Test notification dispatched to webhook");
       } else {
-        toastError(`Webhook test failed: status ${res.status}`);
+        toastError(data.error || `Webhook test failed with status ${res.status}`);
       }
     } catch (err: any) {
       toastError(`Connection failed: ${err.message}`);

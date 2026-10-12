@@ -8,9 +8,11 @@ import type { ActivityLog, HouseholdMember } from "@/lib/types";
 export default function ActivityPanel({
   householdId,
   members,
+  refreshKey = 0,
 }: {
   householdId: string;
   members: HouseholdMember[];
+  refreshKey?: number;
 }) {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -30,7 +32,7 @@ export default function ActivityPanel({
     }
 
     loadLogs();
-  }, [householdId]);
+  }, [householdId, refreshKey]);
 
   const nameOf = (uid: string | null) => {
     if (!uid) return "System";

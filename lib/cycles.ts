@@ -140,3 +140,26 @@ export function initials(name: string): string {
       .toUpperCase() || "?"
   );
 }
+
+/** Check if a member has a scheduled leave during a cycle weekend. */
+export function isMemberAway(
+  userId: string | null,
+  cycleSat: Date,
+  cycleSun: Date,
+  leaves: { user_id: string; start_date: string; end_date: string; reason?: string }[]
+): { isAway: boolean; reason: string } {
+  if (!userId || !leaves || leaves.length === 0) return { isAway: false, reason: "" };
+
+  const satStr = fmtIsoDate(cycleSat);
+  const sunStr = fmtIsoDate(cycleSun);
+
+  const activeLeave = leaves.find(
+    (l) => l.user_id === userId && l.start_date <= sunStr && l.end_date >= satStr
+  );
+
+  if (activeLeave) {
+    return { isAway: true, reason: activeLeave.reason || "Away" };
+  }
+
+  return { isAway: false, reason: "" };
+}

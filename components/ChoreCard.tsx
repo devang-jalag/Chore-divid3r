@@ -16,6 +16,8 @@ export default function ChoreCard({
   items,
   isSwapped = false,
   hasActiveSwap = false,
+  isAway = false,
+  awayReason = "",
   onToggleDone,
   onToggleItem,
   onEditChecklist,
@@ -29,6 +31,8 @@ export default function ChoreCard({
   items: CardChecklistItem[];
   isSwapped?: boolean;
   hasActiveSwap?: boolean;
+  isAway?: boolean;
+  awayReason?: string;
   onToggleDone: () => void;
   onToggleItem: (itemId: string, checked: boolean) => void;
   onEditChecklist?: () => void;
@@ -43,7 +47,7 @@ export default function ChoreCard({
       }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-muted uppercase tracking-wider">{badge}</span>
           {isSwapped && (
             <span className="rounded-md bg-infolt px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-info">
@@ -53,6 +57,14 @@ export default function ChoreCard({
           {hasActiveSwap && !isSwapped && (
             <span className="rounded-md bg-amberlt px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700">
               Swap Pending
+            </span>
+          )}
+          {isAway && (
+            <span
+              title={awayReason ? `Away: ${awayReason}` : "Scheduled away"}
+              className="rounded-md bg-amberlt px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-800"
+            >
+              Away
             </span>
           )}
         </div>

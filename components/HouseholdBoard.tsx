@@ -20,6 +20,7 @@ import {
   fmtLong,
   fmtShort,
   resolveEffectiveAssignee,
+  isMemberAway,
 } from "@/lib/cycles";
 import type {
   ChecklistItem,
@@ -89,6 +90,7 @@ export default function HouseholdBoard({
   const [vacationOpen, setVacationOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
+  const [activityRefreshKey, setActivityRefreshKey] = useState(0);
   const [swapModal, setSwapModal] = useState<{
     choreId: string | null;
     choreName: string;
@@ -223,6 +225,7 @@ export default function HouseholdBoard({
     debounceRef.current = setTimeout(() => {
       refreshAll();
       refreshCompletions();
+      setActivityRefreshKey((k) => k + 1);
     }, 400);
   };
 
@@ -360,6 +363,8 @@ export default function HouseholdBoard({
     done: boolean;
     isSwapped?: boolean;
     hasActiveSwap?: boolean;
+    isAway?: boolean;
+    awayReason?: string;
     items: CardChecklistItem[];
     checklistChoreId: string | null;
     onToggleDone: () => void;
@@ -456,6 +461,7 @@ export default function HouseholdBoard({
           s.status === "pending"
       );
 
+      const awayStatus = isMemberAway(effectiveUserId, dates.sat, dates.sun, leaves);
       const choreItems = items.filter((it) => it.chore_id === chore.id);
 
       return {
@@ -475,6 +481,8 @@ export default function HouseholdBoard({
         ),
         isSwapped,
         hasActiveSwap,
+        isAway: awayStatus.isAway,
+        awayReason: awayStatus.reason,
         items: choreItems.map((it) => ({
           id: it.id,
           text: it.text,
@@ -626,7 +634,11 @@ export default function HouseholdBoard({
       {/* Activity drawer (expandable) */}
       {activityOpen && (
         <section className="mt-6 rounded-3xl border border-line bg-surface p-6 shadow-soft">
-          <ActivityPanel householdId={householdId} members={members} />
+          <ActivityPanel
+            householdId={householdId}
+            members={members}
+            refreshKey={activityRefreshKey}
+          />
         </section>
       )}
 
@@ -690,6 +702,8 @@ export default function HouseholdBoard({
                 done={c.done}
                 isSwapped={c.isSwapped}
                 hasActiveSwap={c.hasActiveSwap}
+                isAway={c.isAway}
+                awayReason={c.awayReason}
                 statusText={c.done ? "Completed" : "Assigned this round"}
                 items={c.items}
                 onToggleDone={c.onToggleDone}
